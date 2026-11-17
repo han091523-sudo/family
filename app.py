@@ -1,5 +1,6 @@
 """한입공유: 로그인 없는 레시피 공유 앱.
-GitHub에 이 파일과 requirements.txt 업로드 후 Streamlit 배포.
+GitHub에 app.py와 requirements.txt 두 파일만 업로드 후 Streamlit 배포.
+config.toml이나 별도 로고 파일은 필요하지 않습니다.
 기본값: 서버 SQLite 자동 생성. 같은 서버의 방문자끼리 공유됩니다.
 주의: Streamlit Cloud 재배포/서버 교체 시 SQLite 자료가 사라질 수 있습니다.
 영구 저장이 필요하면 Secrets에 DATABASE_URL(PostgreSQL)을 설정하세요.
@@ -144,7 +145,7 @@ class LocalConnection:
         return self
     def __exit__(self, kind, value, tb):
         try:
-            self.conn.rollback() if kind else self.conn.commit()
+            _silent = self.conn.rollback() if kind else self.conn.commit()
         finally:
             _unused = self.conn.close()
 
@@ -330,16 +331,18 @@ def detail(recipe, url, ready, favorites):
     text += f"\n\n[비법]\n{recipe.get('tip', '')}"
     _ui_result = st.download_button("레시피 글 저장", text.encode("utf-8-sig"), "recipe.txt", "text/plain", use_container_width=True)
     if not recipe.get("sample") and recipe["id"] in st.session_state.get("my_recipe_ids", []):
-        with st.expander("내 게시물 관리"):
-            confirmed = st.checkbox("삭제하면 되돌릴 수 없음을 확인했어요.")
-            if st.button("이 레시피 삭제", disabled=not confirmed):
-                try:
-                    with db_connect(url) as conn:
-                        _unused = conn.execute("DELETE FROM hanip_recipes WHERE id=%s",
-                                     (recipe["id"],))
-                    _unused = go("홈")
-                except Exception:
-                    _ui_result = st.error("삭제하지 못했어요. 다시 시도해 주세요.")
+        _ui_result = st.markdown("### 레시피 삭제")
+        confirmed = st.checkbox("이 레시피를 영구 삭제할게요", key="delete_confirm_" + recipe["id"])
+        if st.button("🗑️ 레시피 삭제", disabled=not confirmed, use_container_width=True, key="delete_" + recipe["id"]):
+            try:
+                with db_connect(url) as conn:
+                    _unused = conn.execute("DELETE FROM hanip_recipes WHERE id=%s", (recipe["id"],))
+                st.session_state.my_recipe_ids = [rid for rid in st.session_state.get("my_recipe_ids", []) if rid != recipe["id"]]
+                st.session_state.flash = "레시피를 삭제했어요."
+            except Exception:
+                _ui_result = st.error("삭제하지 못했어요. 다시 시도해 주세요.")
+            else:
+                _unused = go("홈")
 
 
 def normalize(value):
@@ -487,7 +490,6 @@ def main():
             with b:
                 if st.button("♥" if recipe["id"] in favorites else "♡ 찜", key="fav_"+recipe["id"], use_container_width=True):
                     _unused = toggle_favorite(recipe, url, ready, favorites)
-    _ui_result = st.caption("한입공유 · 음식 알레르기와 재료의 익힘 정도를 확인해 주세요.")
 
 
 if __name__ == "__main__":
