@@ -1,20 +1,11 @@
-"""한입공유 — Streamlit 공유 레시피 앱
-실행: pip install -r requirements.txt && streamlit run app.py
-
-제작자 최초 설정 (가족 이용자는 설정하지 않습니다)
-1. GitHub 저장소에 app.py, requirements.txt 업로드 후 Streamlit Community Cloud 배포.
-2. Supabase 등에서 PostgreSQL 프로젝트 생성 후 Connect에서 Session pooler 연결 문자열 복사.
-   Streamlit Cloud에서는 IPv4를 지원하는 Session pooler 연결을 권장합니다.
-3. Streamlit 앱 Settings > Secrets에 아래 한 줄을 실제 값으로 저장:
-   DATABASE_URL = "postgresql://사용자:암호@호스트:5432/postgres?sslmode=require"
-   비밀번호 특수문자는 URL 인코딩. 비밀값은 GitHub/채팅에 올리지 않습니다.
-4. 테이블은 앱이 자동 생성합니다. 연결 후 두 휴대폰에서 가입/로그인해 공유를 확인하세요.
-
-설정 전: 예시 레시피 탐색만 가능합니다. 가짜 업로드 성공 처리는 하지 않습니다.
-설정 후: 회원, 레시피 사진, 찜은 PostgreSQL에 영구 저장됩니다.
-공개 인터넷용 대규모 서비스가 아닌 소규모 가족 시제품입니다.
-암호는 salt+PBKDF2로 저장. 로그인은 현재 접속 세션 동안 유지됩니다.
-DB 사용자는 이 앱 전용으로 생성하고 다른 민감한 데이터와 분리하세요.
+"""한입공유: 로그인 없는 레시피 공유 앱.
+GitHub에 이 파일과 requirements.txt 업로드 후 Streamlit 배포.
+기본값: 서버 SQLite 자동 생성. 같은 서버의 방문자끼리 공유됩니다.
+주의: Streamlit Cloud 재배포/서버 교체 시 SQLite 자료가 사라질 수 있습니다.
+영구 저장이 필요하면 Secrets에 DATABASE_URL(PostgreSQL)을 설정하세요.
+이용자는 이름만 입력하며 가입, 암호, API 키가 필요하지 않습니다.
+찜과 내 글 관리 권한은 현재 접속 세션 동안만 유지됩니다.
+누구나 게시 가능한 소규모 시제품: 공개 대규모 운영 전 스팸 차단/관리 기능이 필요합니다.
 """
 from __future__ import annotations
 import base64
@@ -137,7 +128,30 @@ def sample_photo(category):
     return make_sample_photo(category)
 
 
+class LocalConnection:
+    def __init__(self):
+        import sqlite3
+        from pathlib import Path
+        folder = Path(".hanip_data")
+        folder.mkdir(exist_ok=True)
+        self.conn = sqlite3.connect(str(folder / "recipes.sqlite3"), timeout=15)
+        self.conn.row_factory = lambda cursor, row: dict(zip([c[0] for c in cursor.description], row))
+        self.conn.execute("PRAGMA foreign_keys=ON")
+    def execute(self, sql, params=()):
+        sql = sql.replace("%s", "?").replace("DEFAULT now()", "DEFAULT CURRENT_TIMESTAMP")
+        return self.conn.execute(sql, params)
+    def __enter__(self):
+        return self
+    def __exit__(self, kind, value, tb):
+        try:
+            self.conn.rollback() if kind else self.conn.commit()
+        finally:
+            self.conn.close()
+
+
 def db_connect(url):
+    if not url:
+        return LocalConnection()
     import psycopg
     from psycopg.rows import dict_row
     return psycopg.connect(url, connect_timeout=8, row_factory=dict_row)
@@ -203,7 +217,7 @@ def toggle_favorite(recipe, url, ready, favorites):
         st.session_state.sample_favorites = list(demo)
         st.rerun()
     if not ready or not st.session_state.get("uid"):
-        st.info("로그인하면 찜한 요리를 내 계정에 저장할 수 있어요.")
+        st.info("지금은 저장할 수 없어요. 잠시 후 다시 시도해 주세요.")
         return
     try:
         with db_connect(url) as conn:
@@ -219,72 +233,8 @@ def toggle_favorite(recipe, url, ready, favorites):
 
 
 def account(url, ready):
-    st.subheader("내 계정")
-    if st.session_state.get("uid"):
-        st.success(f"{st.session_state.nickname}님, 반가워요!")
-        if st.button("로그아웃", use_container_width=True):
-            for key in ("uid", "nickname"):
-                st.session_state.pop(key, None)
-            st.rerun()
-        return
-    if not ready:
-        st.info("지금은 예시 둘러보기 모드예요. 공유 저장소가 연결되면 가입할 수 있어요.")
-        return
-    login, register = st.tabs(["로그인", "처음 왔어요"])
-    with login:
-        with st.form("login", clear_on_submit=True):
-            handle = st.text_input("아이디", max_chars=30).strip().lower()
-            password = st.text_input("비밀번호", type="password", max_chars=128)
-            submitted = st.form_submit_button("로그인", type="primary", use_container_width=True)
-        if submitted:
-            # 세션 단위 지연. 공개 서비스에는 별도의 서버 단위 속도 제한이 필요합니다.
-            import time
-            if time.time() < st.session_state.get("login_after", 0):
-                st.warning("잠시 기다린 뒤 다시 시도해 주세요.")
-            else:
-                st.session_state.login_after = time.time() + 2
-                try:
-                    with db_connect(url) as conn:
-                        user = conn.execute("SELECT * FROM hanip_users WHERE handle=%s", (handle,)).fetchone()
-                    salt = user["salt"] if user else "0" * 32
-                    digest = password_hash(password, salt)
-                    if user and hmac.compare_digest(digest, user["password_hash"]):
-                        st.session_state.uid = user["id"]
-                        st.session_state.nickname = user["nickname"]
-                        go("홈")
-                    else:
-                        st.error("아이디 또는 비밀번호를 확인해 주세요.")
-                except Exception:
-                    st.error("로그인에 실패했어요. 잠시 후 다시 시도해 주세요.")
-    with register:
-        with st.form("register", clear_on_submit=True):
-            nickname = st.text_input("레시피에 표시할 이름", max_chars=20).strip()
-            handle = st.text_input("새 아이디 (영문·숫자, 4~30자)", max_chars=30).strip().lower()
-            password = st.text_input("새 비밀번호 (8자 이상)", type="password", max_chars=128)
-            confirmation = st.text_input("비밀번호 한 번 더", type="password", max_chars=128)
-            st.caption("전용 비밀번호를 사용해 주세요. 다른 사이트의 비밀번호는 쓰지 마세요.")
-            submitted = st.form_submit_button("가입하고 시작", type="primary", use_container_width=True)
-        if submitted:
-            import re
-            if not nickname or not re.fullmatch(r"[a-z0-9]{4,30}", handle):
-                st.warning("이름과 아이디 형식을 확인해 주세요.")
-            elif len(password) < 8 or password != confirmation:
-                st.warning("비밀번호는 8자 이상이며 두 칸이 같아야 해요.")
-            else:
-                try:
-                    uid, salt = str(uuid.uuid4()), secrets.token_hex(16)
-                    with db_connect(url) as conn:
-                        result = conn.execute("""INSERT INTO hanip_users (id, handle, nickname, salt, password_hash)
-                            VALUES (%s,%s,%s,%s,%s) ON CONFLICT(handle) DO NOTHING RETURNING id""",
-                            (uid, handle, nickname, salt, password_hash(password, salt))).fetchone()
-                    if not result:
-                        st.warning("이미 사용 중인 아이디예요.")
-                    else:
-                        st.session_state.uid = uid
-                        st.session_state.nickname = nickname
-                        go("홈")
-                except Exception:
-                    st.error("가입을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.")
+    st.subheader("내가 올린 요리")
+    st.caption("가입 없이 사용해요. 찜과 내 글 목록은 현재 접속 중에만 유지돼요.")
 
 
 def upload(url, ready):
@@ -292,13 +242,9 @@ def upload(url, ready):
     if not ready:
         st.info("공유 저장소 연결 전이라 요리를 올릴 수 없어요. 홈에서 예시를 먼저 둘러보세요.")
         return
-    if not st.session_state.get("uid"):
-        st.info("내 계정으로 로그인하고 나만의 요리를 공유해 주세요.")
-        if st.button("로그인하러 가기", type="primary", use_container_width=True):
-            go("내 공간")
-        return
     st.caption("사진과 요리법은 다른 이용자에게 공개돼요. 직접 만든 사진과 글만 올려 주세요.")
     with st.form("new_recipe", clear_on_submit=False):
+        nickname = st.text_input("만든 사람 이름", value=st.session_state.get("nickname", ""), placeholder="예: 엄마, 지민", max_chars=20)
         photo = st.file_uploader("완성된 음식 사진 · JPG/PNG, 8MB 이하", type=["jpg", "jpeg", "png"])
         title = st.text_input("요리 이름", placeholder="우리 집 들깨수제비", max_chars=50)
         category = st.selectbox("음식 종류", list(CATEGORIES)[1:])
@@ -311,8 +257,8 @@ def upload(url, ready):
         submitted = st.form_submit_button("레시피 공유하기", type="primary", use_container_width=True)
         if submitted:
             steps = [line.strip() for line in steps_text.splitlines() if line.strip()]
-            if not title.strip() or not ingredients.strip() or not steps or photo is None:
-                st.warning("음식 사진, 요리 이름, 재료, 만드는 순서를 모두 채워 주세요.")
+            if not nickname.strip() or not title.strip() or not ingredients.strip() or not steps or photo is None:
+                st.warning("만든 사람 이름, 사진, 요리 이름, 재료, 만드는 순서를 채워 주세요.")
             elif len(steps) > 30:
                 st.warning("조리 과정은 30단계 이하로 정리해 주세요.")
             else:
@@ -320,11 +266,16 @@ def upload(url, ready):
                     data = prepare_photo(photo.getvalue())
                     rid = str(uuid.uuid4())
                     with db_connect(url) as conn:
+                        author_id = str(uuid.uuid4())
+                        conn.execute("INSERT INTO hanip_users (id,handle,nickname,salt,password_hash) VALUES (%s,%s,%s,%s,%s)",
+                                     (author_id, author_id, nickname.strip(), "guest", "disabled"))
                         conn.execute("""INSERT INTO hanip_recipes
                         (id,user_id,title,category,minutes,servings,ingredients,steps,tip,photo)
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                        (rid, st.session_state.uid, title.strip(), category, int(minutes), int(servings),
+                        (rid, author_id, title.strip(), category, int(minutes), int(servings),
                          ingredients.strip(), json.dumps(steps, ensure_ascii=False), tip.strip(), data))
+                    st.session_state.setdefault("my_recipe_ids", []).append(rid)
+                    st.session_state.nickname = nickname.strip()
                     st.session_state.flash = "요리를 공유했어요! 다른 휴대폰에서도 새로고침하면 볼 수 있어요."
                     go("상세", rid)
                 except ValueError as exc:
@@ -380,14 +331,14 @@ def detail(recipe, url, ready, favorites):
     text += "\n".join(f"{i}. {s}" for i, s in enumerate(recipe["steps"], 1))
     text += f"\n\n[비법]\n{recipe.get('tip', '')}"
     st.download_button("레시피 글 저장", text.encode("utf-8-sig"), "recipe.txt", "text/plain", use_container_width=True)
-    if not recipe.get("sample") and st.session_state.get("uid") == recipe.get("user_id"):
+    if not recipe.get("sample") and recipe["id"] in st.session_state.get("my_recipe_ids", []):
         with st.expander("내 게시물 관리"):
             confirmed = st.checkbox("삭제하면 되돌릴 수 없음을 확인했어요.")
             if st.button("이 레시피 삭제", disabled=not confirmed):
                 try:
                     with db_connect(url) as conn:
-                        conn.execute("DELETE FROM hanip_recipes WHERE id=%s AND user_id=%s",
-                                     (recipe["id"], st.session_state.uid))
+                        conn.execute("DELETE FROM hanip_recipes WHERE id=%s",
+                                     (recipe["id"],))
                     go("홈")
                 except Exception:
                     st.error("삭제하지 못했어요. 다시 시도해 주세요.")
@@ -446,20 +397,25 @@ def main():
     url = url or os.environ.get("DATABASE_URL", "")
     ready, db_failed = False, False
     recipes = []
-    if url:
-        try:
-            initialize_db(url)
-            recipes = get_recipes(url)
-            ready = True
-        except Exception:
-            db_failed = True
+    try:
+        initialize_db(url)
+        if not st.session_state.get("uid"):
+            guest_id = str(uuid.uuid4())
+            with db_connect(url) as conn:
+                conn.execute("INSERT INTO hanip_users (id,handle,nickname,salt,password_hash) VALUES (%s,%s,%s,%s,%s)",
+                             (guest_id, guest_id, "익명", "guest", "disabled"))
+            st.session_state.uid = guest_id
+        recipes = get_recipes(url)
+        ready = True
+    except Exception:
+        db_failed = True
     st.markdown(f'<div class="brand" style="display:flex;align-items:center;gap:10px"><img src="data:image/webp;base64,{LOGO_B64}" alt="한입공유 로고" style="width:48px;height:48px;border-radius:17%">한입공유 <span style="font-size:13px;color:#56716C">우리들의 레시피</span></div>', unsafe_allow_html=True)
     if db_failed:
         st.warning("공유 저장소에 연결되지 않았어요. 지금은 예시만 볼 수 있어요.")
     elif not ready:
         st.caption("👀 예시 둘러보기 · 공유 저장소 연결 전")
-    if ready:
-        st.caption("🟢 공유 저장소 연결됨")
+    if ready and not url:
+        st.caption("가입 없이 바로 사용 · 서버 임시 저장 (서버 초기화 시 사라질 수 있어요)")
     nav = st.columns(4)
     for col, label in zip(nav, ["홈", "찜한 요리", "요리 올리기", "내 공간"]):
         with col:
@@ -490,11 +446,11 @@ def main():
         if not st.session_state.get("uid"):
             return
         st.subheader("내가 올린 요리")
-        visible = [r for r in recipes if r["user_id"] == st.session_state.uid]
+        visible = [r for r in recipes if r["id"] in st.session_state.get("my_recipe_ids", [])]
     elif page == "찜한 요리":
         st.subheader("다시 만들고 싶은 한입 ♥")
         visible = [r for r in all_recipes if r["id"] in favorites]
-        st.caption("실제 요리 찜은 로그인 계정에 저장돼요. 예시 찜은 현재 접속 중에만 유지돼요.")
+        st.caption("찜 목록은 현재 접속 중에만 유지돼요.")
     else:
         st.markdown('<section class="hero"><small>한 사람의 비법이, 모두의 한 끼로</small><h1>오늘은 누구의 요리를<br>만들어 볼까요?</h1><p>내가 아끼는 레시피를 함께 나눠요.</p></section>', unsafe_allow_html=True)
         query = st.text_input("요리 검색", placeholder="🔎 요리 이름, 재료, 만든 사람", label_visibility="collapsed", max_chars=100)
