@@ -36,7 +36,7 @@ def show_launch_logo():
     if st.session_state.get("launch_logo_shown", False):
         return
     st.session_state.launch_logo_shown = True
-    st.markdown(f"""
+    _ui_result = st.markdown(f"""
     <style>
     @keyframes hanip-launch {{
         0% {{visibility:visible;opacity:1;pointer-events:auto;}}
@@ -204,7 +204,7 @@ def go(page, recipe_id=None):
     st.session_state.page = page
     if recipe_id:
         st.session_state.selected = recipe_id
-    st.rerun()
+    _ui_result = st.rerun()
 
 
 def toggle_favorite(recipe, url, ready, favorites):
@@ -215,9 +215,9 @@ def toggle_favorite(recipe, url, ready, favorites):
         else:
             _unused = demo.add(recipe["id"])
         st.session_state.sample_favorites = list(demo)
-        st.rerun()
+        _ui_result = st.rerun()
     if not ready or not st.session_state.get("uid"):
-        st.info("지금은 저장할 수 없어요. 잠시 후 다시 시도해 주세요.")
+        _ui_result = st.info("지금은 저장할 수 없어요. 잠시 후 다시 시도해 주세요.")
         return
     try:
         with db_connect(url) as conn:
@@ -227,22 +227,21 @@ def toggle_favorite(recipe, url, ready, favorites):
             else:
                 _unused = conn.execute("INSERT INTO hanip_favorites VALUES (%s,%s) ON CONFLICT DO NOTHING",
                              (st.session_state.uid, recipe["id"]))
-        st.rerun()
+        _ui_result = st.rerun()
     except Exception:
-        st.error("찜을 저장하지 못했어요. 잠시 후 다시 눌러 주세요.")
+        _ui_result = st.error("찜을 저장하지 못했어요. 잠시 후 다시 눌러 주세요.")
 
 
 def account(url, ready):
-    st.subheader("내가 올린 요리")
-    st.caption("가입 없이 사용해요. 찜과 내 글 목록은 현재 접속 중에만 유지돼요.")
+    _ui_result = st.subheader("내가 올린 요리")
 
 
 def upload(url, ready):
-    st.subheader("내 요리 올리기")
+    _ui_result = st.subheader("내 요리 올리기")
     if not ready:
-        st.info("공유 저장소 연결 전이라 요리를 올릴 수 없어요. 홈에서 예시를 먼저 둘러보세요.")
+        _ui_result = st.info("공유 저장소 연결 전이라 요리를 올릴 수 없어요. 홈에서 예시를 먼저 둘러보세요.")
         return
-    st.caption("사진과 요리법은 다른 이용자에게 공개돼요. 직접 만든 사진과 글만 올려 주세요.")
+    _ui_result = st.caption("사진과 요리법은 다른 이용자에게 공개돼요. 직접 만든 사진과 글만 올려 주세요.")
     with st.form("new_recipe", clear_on_submit=False):
         nickname = st.text_input("만든 사람 이름", value=st.session_state.get("nickname", ""), placeholder="예: 엄마, 지민", max_chars=20)
         photo = st.file_uploader("완성된 음식 사진 · JPG/PNG, 8MB 이하", type=["jpg", "jpeg", "png"])
@@ -258,9 +257,9 @@ def upload(url, ready):
         if submitted:
             steps = [line.strip() for line in steps_text.splitlines() if line.strip()]
             if not nickname.strip() or not title.strip() or not ingredients.strip() or not steps or photo is None:
-                st.warning("만든 사람 이름, 사진, 요리 이름, 재료, 만드는 순서를 채워 주세요.")
+                _ui_result = st.warning("만든 사람 이름, 사진, 요리 이름, 재료, 만드는 순서를 채워 주세요.")
             elif len(steps) > 30:
-                st.warning("조리 과정은 30단계 이하로 정리해 주세요.")
+                _ui_result = st.warning("조리 과정은 30단계 이하로 정리해 주세요.")
             else:
                 try:
                     data = prepare_photo(photo.getvalue())
@@ -279,58 +278,57 @@ def upload(url, ready):
                     st.session_state.flash = "요리를 공유했어요! 다른 휴대폰에서도 새로고침하면 볼 수 있어요."
                     _unused = go("상세", rid)
                 except ValueError as exc:
-                    st.warning(str(exc))
+                    _ui_result = st.warning(str(exc))
                 except Exception:
-                    st.error("저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요.")
+                    _ui_result = st.error("저장하지 못했어요. 연결을 확인하고 다시 시도해 주세요.")
 
 
 def detail(recipe, url, ready, favorites):
     if st.button("← 메뉴로 돌아가기"):
         _unused = go("홈")
-    st.image(photo_for(recipe), use_container_width=True)
+    _ui_result = st.image(photo_for(recipe), use_container_width=True)
     if recipe.get("sample"):
-        st.caption("둘러보기용 예시 · 사진 대신 음식 일러스트를 사용했어요.")
-    st.markdown(f"## {esc(recipe['title'])}")
-    st.caption(f"{recipe['author']}님의 레시피 · {recipe['minutes']}분 · {recipe['servings']}인분")
+        _ui_result = st.caption("둘러보기용 예시 · 사진 대신 음식 일러스트를 사용했어요.")
+    _ui_result = st.markdown(f"## {esc(recipe['title'])}")
+    _ui_result = st.caption(f"{recipe['author']}님의 레시피 · {recipe['minutes']}분 · {recipe['servings']}인분")
     liked = recipe["id"] in favorites
     if st.button("♥ 찜했어요" if liked else "♡ 이 요리 찜하기", use_container_width=True):
         _unused = toggle_favorite(recipe, url, ready, favorites)
-    st.markdown("### 재료")
+    _ui_result = st.markdown("### 재료")
     for index, ingredient in enumerate(recipe["ingredients"].splitlines()):
         if ingredient.strip():
-            st.checkbox(ingredient.strip(), key=f"ingredient_{recipe['id']}_{index}")
-    st.caption("재료 체크와 조리 진행은 현재 접속 중에만 유지돼요.")
+            _ui_result = st.checkbox(ingredient.strip(), key=f"ingredient_{recipe['id']}_{index}")
     if recipe.get("tip"):
         with st.container(border=True):
-            st.markdown("**이 요리의 한 끗 💡**")
-            st.write(recipe["tip"])
-    st.markdown("### 만드는 순서")
+            _ui_result = st.markdown("**이 요리의 한 끗 💡**")
+            _ui_result = st.write(recipe["tip"])
+    _ui_result = st.markdown("### 만드는 순서")
     cooking_key = f"cooking_{recipe['id']}"
     if st.button("🍳 만들기 시작", type="primary", use_container_width=True):
         st.session_state[cooking_key] = 0
     if cooking_key in st.session_state:
         index = min(st.session_state[cooking_key], len(recipe["steps"]) - 1)
         with st.container(border=True):
-            st.caption(f"STEP {index + 1} / {len(recipe['steps'])}")
-            st.markdown(f"### {esc(recipe['steps'][index])}")
-            st.progress((index + 1) / len(recipe["steps"]))
+            _ui_result = st.caption(f"STEP {index + 1} / {len(recipe['steps'])}")
+            _ui_result = st.markdown(f"### {esc(recipe['steps'][index])}")
+            _ui_result = st.progress((index + 1) / len(recipe["steps"]))
             if index > 0 and st.button("← 이전 단계"):
                 st.session_state[cooking_key] -= 1
-                st.rerun()
+                _ui_result = st.rerun()
             if index < len(recipe["steps"]) - 1:
                 if st.button("다 했어요, 다음 →", type="primary", use_container_width=True):
                     st.session_state[cooking_key] += 1
-                    st.rerun()
+                    _ui_result = st.rerun()
             elif st.button("요리 완성!", type="primary", use_container_width=True):
-                st.success("수고했어요. 맛있게 드세요! 🍽️")
-                st.balloons()
+                _ui_result = st.success("수고했어요. 맛있게 드세요! 🍽️")
+                _ui_result = st.balloons()
     else:
         for index, step in enumerate(recipe["steps"], 1):
-            st.write(f"**{index}.** {step}")
+            _ui_result = st.write(f"**{index}.** {step}")
     text = f"{recipe['title']}\n{recipe['author']}님의 레시피\n\n[재료]\n{recipe['ingredients']}\n\n[만드는 순서]\n"
     text += "\n".join(f"{i}. {s}" for i, s in enumerate(recipe["steps"], 1))
     text += f"\n\n[비법]\n{recipe.get('tip', '')}"
-    st.download_button("레시피 글 저장", text.encode("utf-8-sig"), "recipe.txt", "text/plain", use_container_width=True)
+    _ui_result = st.download_button("레시피 글 저장", text.encode("utf-8-sig"), "recipe.txt", "text/plain", use_container_width=True)
     if not recipe.get("sample") and recipe["id"] in st.session_state.get("my_recipe_ids", []):
         with st.expander("내 게시물 관리"):
             confirmed = st.checkbox("삭제하면 되돌릴 수 없음을 확인했어요.")
@@ -341,7 +339,7 @@ def detail(recipe, url, ready, favorites):
                                      (recipe["id"],))
                     _unused = go("홈")
                 except Exception:
-                    st.error("삭제하지 못했어요. 다시 시도해 주세요.")
+                    _ui_result = st.error("삭제하지 못했어요. 다시 시도해 주세요.")
 
 
 def normalize(value):
@@ -355,9 +353,9 @@ def matches(recipe, query, category, quick):
 
 
 def main():
-    st.set_page_config(page_title="한입공유 · 우리들의 레시피", page_icon=Image.open(io.BytesIO(base64.b64decode(LOGO_B64))), layout="centered", initial_sidebar_state="collapsed")
+    _ui_result = st.set_page_config(page_title="한입공유 · 우리들의 레시피", page_icon=Image.open(io.BytesIO(base64.b64decode(LOGO_B64))), layout="centered", initial_sidebar_state="collapsed")
     _unused = show_launch_logo()
-    st.markdown("""<style>
+    _ui_result = st.markdown("""<style>
     :root{--mint:#087E75;--ink:#153C37;--pale:#EAF7F4;--line:#DAE9E5}
     .stApp{background:#FFF9ED;color:var(--ink)}
     .block-container{max-width:760px;padding:1.1rem 1rem 3rem}
@@ -409,26 +407,24 @@ def main():
         ready = True
     except Exception:
         db_failed = True
-    st.markdown(f'<div class="brand" style="display:flex;align-items:center;gap:10px"><img src="data:image/webp;base64,{LOGO_B64}" alt="한입공유 로고" style="width:48px;height:48px;border-radius:17%">한입공유 <span style="font-size:13px;color:#56716C">우리들의 레시피</span></div>', unsafe_allow_html=True)
+    _ui_result = st.markdown(f'<div class="brand" style="display:flex;align-items:center;gap:10px"><img src="data:image/webp;base64,{LOGO_B64}" alt="한입공유 로고" style="width:48px;height:48px;border-radius:17%">한입공유 <span style="font-size:13px;color:#56716C">우리들의 레시피</span></div>', unsafe_allow_html=True)
     if db_failed:
-        st.warning("공유 저장소에 연결되지 않았어요. 지금은 예시만 볼 수 있어요.")
+        _ui_result = st.warning("공유 저장소에 연결되지 않았어요. 지금은 예시만 볼 수 있어요.")
     elif not ready:
-        st.caption("👀 예시 둘러보기 · 공유 저장소 연결 전")
-    if ready and not url:
-        st.caption("가입 없이 바로 사용 · 서버 임시 저장 (서버 초기화 시 사라질 수 있어요)")
+        _ui_result = st.caption("👀 예시 둘러보기 · 공유 저장소 연결 전")
     nav = st.columns(4)
     for col, label in zip(nav, ["홈", "찜한 요리", "요리 올리기", "내 공간"]):
         with col:
             if st.button(label, use_container_width=True, type="primary" if st.session_state.page == label else "secondary"):
                 _unused = go(label)
     if st.session_state.get("flash"):
-        st.success(st.session_state.pop("flash"))
+        _ui_result = st.success(st.session_state.pop("flash"))
     favorites = set(st.session_state.get("sample_favorites", []))
     if ready:
         try:
             favorites |= get_favorites(url, st.session_state.get("uid"))
         except Exception:
-            st.warning("찜 목록을 불러오지 못했어요.")
+            _ui_result = st.warning("찜 목록을 불러오지 못했어요.")
     all_recipes = recipes + SAMPLES
     page = st.session_state.page
     if page == "요리 올리기":
@@ -439,23 +435,22 @@ def main():
         if recipe:
             _unused = detail(recipe, url, ready, favorites)
         else:
-            st.info("삭제되었거나 현재 목록에 없는 레시피예요. 홈에서 다시 찾아 주세요.")
+            _ui_result = st.info("삭제되었거나 현재 목록에 없는 레시피예요. 홈에서 다시 찾아 주세요.")
         return
     if page == "내 공간":
         _unused = account(url, ready)
         if not st.session_state.get("uid"):
             return
-        st.subheader("내가 올린 요리")
+        _ui_result = st.subheader("내가 올린 요리")
         visible = [r for r in recipes if r["id"] in st.session_state.get("my_recipe_ids", [])]
     elif page == "찜한 요리":
-        st.subheader("다시 만들고 싶은 한입 ♥")
+        _ui_result = st.subheader("다시 만들고 싶은 한입 ♥")
         visible = [r for r in all_recipes if r["id"] in favorites]
-        st.caption("찜 목록은 현재 접속 중에만 유지돼요.")
     else:
-        st.markdown('<section class="hero"><small>한 사람의 비법이, 모두의 한 끼로</small><h1>오늘은 누구의 요리를<br>만들어 볼까요?</h1><p>내가 아끼는 레시피를 함께 나눠요.</p></section>', unsafe_allow_html=True)
+        _ui_result = st.markdown('<section class="hero"><small>한 사람의 비법이, 모두의 한 끼로</small><h1>오늘은 누구의 요리를<br>만들어 볼까요?</h1><p>내가 아끼는 레시피를 함께 나눠요.</p></section>', unsafe_allow_html=True)
         query = st.text_input("요리 검색", placeholder="🔎 요리 이름, 재료, 만든 사람", label_visibility="collapsed", max_chars=100)
         _unused = st.session_state.setdefault("food_category", "전체")
-        st.markdown("#### 오늘 당기는 메뉴")
+        _ui_result = st.markdown("#### 오늘 당기는 메뉴")
         category_items = list(CATEGORIES.items())
         for start in range(0, len(category_items), 4):
             category_columns = st.columns(4)
@@ -465,26 +460,26 @@ def main():
                                  type="primary" if st.session_state.food_category == name else "secondary",
                                  use_container_width=True):
                         st.session_state.food_category = name
-                        st.rerun()
+                        _ui_result = st.rerun()
         chosen = st.session_state.food_category
         quick = st.toggle("20분 이내로 뚝딱", value=False)
         order = st.selectbox("정렬", ["최근 올라온 순", "빠르게 만드는 순"], label_visibility="collapsed")
         visible = [r for r in all_recipes if matches(r, query, chosen, quick)]
         if order == "빠르게 만드는 순":
             _unused = visible.sort(key=lambda r: r["minutes"])
-        st.markdown(f"### 함께 나누는 레시피 · {len(visible)}")
+        _ui_result = st.markdown(f"### 함께 나누는 레시피 · {len(visible)}")
         if st.button("↻ 새 레시피 확인", use_container_width=True):
-            st.rerun()
+            _ui_result = st.rerun()
     if not visible:
-        st.info("아직 요리가 없어요. 다른 메뉴를 고르거나 첫 레시피를 올려 주세요.")
+        _ui_result = st.info("아직 요리가 없어요. 다른 메뉴를 고르거나 첫 레시피를 올려 주세요.")
     # 휴대폰에서도 사진과 이름을 넉넉하게 읽도록 카드는 세로로 배치합니다.
     for recipe in visible:
         with st.container(border=True):
-            st.image(photo_for(recipe), use_container_width=True)
+            _ui_result = st.image(photo_for(recipe), use_container_width=True)
             if recipe.get("sample"):
-                st.markdown('<span class="tag">예시 레시피 · 음식 일러스트</span>', unsafe_allow_html=True)
-            st.markdown(f"### {esc(recipe['title'])}")
-            st.caption(f"{recipe['author']}님의 레시피 · {recipe['category']} · {recipe['minutes']}분 · {recipe['servings']}인분")
+                _ui_result = st.markdown('<span class="tag">예시 레시피 · 음식 일러스트</span>', unsafe_allow_html=True)
+            _ui_result = st.markdown(f"### {esc(recipe['title'])}")
+            _ui_result = st.caption(f"{recipe['author']}님의 레시피 · {recipe['category']} · {recipe['minutes']}분 · {recipe['servings']}인분")
             a, b = st.columns([3, 1])
             with a:
                 if st.button("레시피 보기 →", key="open_"+recipe["id"], use_container_width=True):
@@ -492,7 +487,7 @@ def main():
             with b:
                 if st.button("♥" if recipe["id"] in favorites else "♡ 찜", key="fav_"+recipe["id"], use_container_width=True):
                     _unused = toggle_favorite(recipe, url, ready, favorites)
-    st.caption("한입공유 · 음식 알레르기와 재료의 익힘 정도를 확인해 주세요.")
+    _ui_result = st.caption("한입공유 · 음식 알레르기와 재료의 익힘 정도를 확인해 주세요.")
 
 
 if __name__ == "__main__":
