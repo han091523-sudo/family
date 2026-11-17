@@ -330,19 +330,35 @@ def detail(recipe, url, ready, favorites):
     text += "\n".join(f"{i}. {s}" for i, s in enumerate(recipe["steps"], 1))
     text += f"\n\n[비법]\n{recipe.get('tip', '')}"
     _ui_result = st.download_button("레시피 글 저장", text.encode("utf-8-sig"), "recipe.txt", "text/plain", use_container_width=True)
-    if not recipe.get("sample") and recipe["id"] in st.session_state.get("my_recipe_ids", []):
-        _ui_result = st.markdown("### 레시피 삭제")
-        confirmed = st.checkbox("이 레시피를 영구 삭제할게요", key="delete_confirm_" + recipe["id"])
-        if st.button("🗑️ 레시피 삭제", disabled=not confirmed, use_container_width=True, key="delete_" + recipe["id"]):
+    _unused = delete_controls(recipe, url, "detail")
+
+
+def delete_controls(recipe, url, location):
+    rid = recipe["id"]
+    key = f"delete_{location}_{rid}"
+    if st.button("🗑️ 레시피 삭제", key=key, use_container_width=True):
+        st.session_state[key + "_confirm"] = True
+    if st.session_state.get(key + "_confirm"):
+        _ui_result = st.warning("이 레시피를 삭제할까요? 삭제하면 되돌릴 수 없어요.")
+        if st.button("삭제 확인", key=key + "_yes", type="primary"):
             try:
-                with db_connect(url) as conn:
-                    _unused = conn.execute("DELETE FROM hanip_recipes WHERE id=%s", (recipe["id"],))
-                st.session_state.my_recipe_ids = [rid for rid in st.session_state.get("my_recipe_ids", []) if rid != recipe["id"]]
+                if recipe.get("sample"):
+                    hidden = set(st.session_state.get("hidden_samples", []))
+                    _unused = hidden.add(rid)
+                    st.session_state.hidden_samples = list(hidden)
+                else:
+                    with db_connect(url) as conn:
+                        _unused = conn.execute("DELETE FROM hanip_recipes WHERE id=%s", (rid,))
+                st.session_state.my_recipe_ids = [i for i in st.session_state.get("my_recipe_ids", []) if i != rid]
+                _discard = st.session_state.pop(key + "_confirm", None)
                 st.session_state.flash = "레시피를 삭제했어요."
             except Exception:
                 _ui_result = st.error("삭제하지 못했어요. 다시 시도해 주세요.")
             else:
                 _unused = go("홈")
+        if st.button("취소", key=key + "_no"):
+            _discard = st.session_state.pop(key + "_confirm", None)
+            _ui_result = st.rerun()
 
 
 def normalize(value):
@@ -428,7 +444,7 @@ def main():
             favorites |= get_favorites(url, st.session_state.get("uid"))
         except Exception:
             _ui_result = st.warning("찜 목록을 불러오지 못했어요.")
-    all_recipes = recipes + SAMPLES
+    all_recipes = recipes + [r for r in SAMPLES if r["id"] not in st.session_state.get("hidden_samples", [])]
     page = st.session_state.page
     if page == "요리 올리기":
         _unused = upload(url, ready)
@@ -490,6 +506,7 @@ def main():
             with b:
                 if st.button("♥" if recipe["id"] in favorites else "♡ 찜", key="fav_"+recipe["id"], use_container_width=True):
                     _unused = toggle_favorite(recipe, url, ready, favorites)
+            _unused = delete_controls(recipe, url, "list")
 
 
 if __name__ == "__main__":
