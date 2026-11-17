@@ -87,9 +87,9 @@ def prepare_photo(raw):
             if original.width * original.height > 24_000_000:
                 raise ValueError("사진 크기가 너무 커요. 작은 사진을 골라 주세요.")
             image = ImageOps.exif_transpose(original).convert("RGB")
-            image.thumbnail((1200, 1200))
+            _unused = image.thumbnail((1200, 1200))
             output = io.BytesIO()
-            image.save(output, format="JPEG", quality=82)
+            _unused = image.save(output, format="JPEG", quality=82)
             return output.getvalue()
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValueError("읽을 수 없는 사진이에요. JPG 또는 PNG로 다시 골라 주세요.") from exc
@@ -100,26 +100,26 @@ def make_sample_photo(category):
     from PIL import ImageDraw
     image = Image.new("RGB", (800, 420), "#EAF7F4")
     d = ImageDraw.Draw(image)
-    d.ellipse((215, 40, 585, 395), fill="#CFDFDA")
-    d.ellipse((205, 25, 575, 380), fill="#FFFFFF")
+    _unused = d.ellipse((215, 40, 585, 395), fill="#CFDFDA")
+    _unused = d.ellipse((205, 25, 575, 380), fill="#FFFFFF")
     if category == "밥·죽":
-        d.ellipse((265, 80, 520, 325), fill="#FFF0C9")
-        d.ellipse((300, 105, 500, 290), fill="#FFFFFF")
-        d.ellipse((360, 150, 455, 240), fill="#FFBD39")
+        _unused = d.ellipse((265, 80, 520, 325), fill="#FFF0C9")
+        _unused = d.ellipse((300, 105, 500, 290), fill="#FFFFFF")
+        _unused = d.ellipse((360, 150, 455, 240), fill="#FFBD39")
         for x, y in [(305, 200), (460, 120), (430, 285), (280, 250)]:
-            d.rounded_rectangle((x, y, x+30, y+10), 4, fill="#386955")
+            _unused = d.rounded_rectangle((x, y, x+30, y+10), 4, fill="#386955")
     elif category == "국·찌개":
-        d.ellipse((250, 70, 530, 335), fill="#AC713F")
+        _unused = d.ellipse((250, 70, 530, 335), fill="#AC713F")
         for x, y in [(300, 110), (420, 170), (335, 235)]:
-            d.rounded_rectangle((x, y, x+65, y+50), 7, fill="#FFF3CF")
+            _unused = d.rounded_rectangle((x, y, x+65, y+50), 7, fill="#FFF3CF")
         for x, y in [(285, 210), (420, 100), (415, 270)]:
-            d.ellipse((x, y, x+40, y+25), fill="#6B9965")
+            _unused = d.ellipse((x, y, x+40, y+25), fill="#6B9965")
     else:
-        d.rounded_rectangle((275, 95, 510, 305), 28, fill="#BC7942")
-        d.rounded_rectangle((295, 110, 490, 285), 22, fill="#F7C674")
-        d.polygon([(300, 120), (480, 270), (320, 260)], fill="#FFE59C")
+        _unused = d.rounded_rectangle((275, 95, 510, 305), 28, fill="#BC7942")
+        _unused = d.rounded_rectangle((295, 110, 490, 285), 22, fill="#F7C674")
+        _unused = d.polygon([(300, 120), (480, 270), (320, 260)], fill="#FFE59C")
     output = io.BytesIO()
-    image.save(output, "JPEG", quality=85)
+    _unused = image.save(output, "JPEG", quality=85)
     return output.getvalue()
 
 
@@ -133,10 +133,10 @@ class LocalConnection:
         import sqlite3
         from pathlib import Path
         folder = Path(".hanip_data")
-        folder.mkdir(exist_ok=True)
+        _unused = folder.mkdir(exist_ok=True)
         self.conn = sqlite3.connect(str(folder / "recipes.sqlite3"), timeout=15)
         self.conn.row_factory = lambda cursor, row: dict(zip([c[0] for c in cursor.description], row))
-        self.conn.execute("PRAGMA foreign_keys=ON")
+        _unused = self.conn.execute("PRAGMA foreign_keys=ON")
     def execute(self, sql, params=()):
         sql = sql.replace("%s", "?").replace("DEFAULT now()", "DEFAULT CURRENT_TIMESTAMP")
         return self.conn.execute(sql, params)
@@ -146,7 +146,7 @@ class LocalConnection:
         try:
             self.conn.rollback() if kind else self.conn.commit()
         finally:
-            self.conn.close()
+            _unused = self.conn.close()
 
 
 def db_connect(url):
@@ -160,17 +160,17 @@ def db_connect(url):
 @st.cache_resource
 def initialize_db(url):
     with db_connect(url) as conn:
-        conn.execute("""CREATE TABLE IF NOT EXISTS hanip_users (
+        _unused = conn.execute("""CREATE TABLE IF NOT EXISTS hanip_users (
             id TEXT PRIMARY KEY, handle TEXT UNIQUE NOT NULL, nickname TEXT NOT NULL,
             salt TEXT NOT NULL, password_hash TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS hanip_recipes (
+        _unused = conn.execute("""CREATE TABLE IF NOT EXISTS hanip_recipes (
             id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES hanip_users(id),
             title TEXT NOT NULL, category TEXT NOT NULL, minutes INTEGER NOT NULL,
             servings INTEGER NOT NULL, ingredients TEXT NOT NULL, steps TEXT NOT NULL,
             tip TEXT NOT NULL, photo BYTEA NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-        conn.execute("""CREATE TABLE IF NOT EXISTS hanip_favorites (
+        _unused = conn.execute("""CREATE TABLE IF NOT EXISTS hanip_favorites (
             user_id TEXT REFERENCES hanip_users(id) ON DELETE CASCADE,
             recipe_id TEXT REFERENCES hanip_recipes(id) ON DELETE CASCADE,
             PRIMARY KEY (user_id, recipe_id))""")
@@ -211,9 +211,9 @@ def toggle_favorite(recipe, url, ready, favorites):
     if recipe.get("sample"):
         demo = set(st.session_state.get("sample_favorites", []))
         if recipe["id"] in demo:
-            demo.remove(recipe["id"])
+            _unused = demo.remove(recipe["id"])
         else:
-            demo.add(recipe["id"])
+            _unused = demo.add(recipe["id"])
         st.session_state.sample_favorites = list(demo)
         st.rerun()
     if not ready or not st.session_state.get("uid"):
@@ -222,10 +222,10 @@ def toggle_favorite(recipe, url, ready, favorites):
     try:
         with db_connect(url) as conn:
             if recipe["id"] in favorites:
-                conn.execute("DELETE FROM hanip_favorites WHERE user_id=%s AND recipe_id=%s",
+                _unused = conn.execute("DELETE FROM hanip_favorites WHERE user_id=%s AND recipe_id=%s",
                              (st.session_state.uid, recipe["id"]))
             else:
-                conn.execute("INSERT INTO hanip_favorites VALUES (%s,%s) ON CONFLICT DO NOTHING",
+                _unused = conn.execute("INSERT INTO hanip_favorites VALUES (%s,%s) ON CONFLICT DO NOTHING",
                              (st.session_state.uid, recipe["id"]))
         st.rerun()
     except Exception:
@@ -267,17 +267,17 @@ def upload(url, ready):
                     rid = str(uuid.uuid4())
                     with db_connect(url) as conn:
                         author_id = str(uuid.uuid4())
-                        conn.execute("INSERT INTO hanip_users (id,handle,nickname,salt,password_hash) VALUES (%s,%s,%s,%s,%s)",
+                        _unused = conn.execute("INSERT INTO hanip_users (id,handle,nickname,salt,password_hash) VALUES (%s,%s,%s,%s,%s)",
                                      (author_id, author_id, nickname.strip(), "guest", "disabled"))
-                        conn.execute("""INSERT INTO hanip_recipes
+                        _unused = conn.execute("""INSERT INTO hanip_recipes
                         (id,user_id,title,category,minutes,servings,ingredients,steps,tip,photo)
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (rid, author_id, title.strip(), category, int(minutes), int(servings),
                          ingredients.strip(), json.dumps(steps, ensure_ascii=False), tip.strip(), data))
-                    st.session_state.setdefault("my_recipe_ids", []).append(rid)
+                    _unused = st.session_state.setdefault("my_recipe_ids", []).append(rid)
                     st.session_state.nickname = nickname.strip()
                     st.session_state.flash = "요리를 공유했어요! 다른 휴대폰에서도 새로고침하면 볼 수 있어요."
-                    go("상세", rid)
+                    _unused = go("상세", rid)
                 except ValueError as exc:
                     st.warning(str(exc))
                 except Exception:
@@ -286,7 +286,7 @@ def upload(url, ready):
 
 def detail(recipe, url, ready, favorites):
     if st.button("← 메뉴로 돌아가기"):
-        go("홈")
+        _unused = go("홈")
     st.image(photo_for(recipe), use_container_width=True)
     if recipe.get("sample"):
         st.caption("둘러보기용 예시 · 사진 대신 음식 일러스트를 사용했어요.")
@@ -294,7 +294,7 @@ def detail(recipe, url, ready, favorites):
     st.caption(f"{recipe['author']}님의 레시피 · {recipe['minutes']}분 · {recipe['servings']}인분")
     liked = recipe["id"] in favorites
     if st.button("♥ 찜했어요" if liked else "♡ 이 요리 찜하기", use_container_width=True):
-        toggle_favorite(recipe, url, ready, favorites)
+        _unused = toggle_favorite(recipe, url, ready, favorites)
     st.markdown("### 재료")
     for index, ingredient in enumerate(recipe["ingredients"].splitlines()):
         if ingredient.strip():
@@ -337,9 +337,9 @@ def detail(recipe, url, ready, favorites):
             if st.button("이 레시피 삭제", disabled=not confirmed):
                 try:
                     with db_connect(url) as conn:
-                        conn.execute("DELETE FROM hanip_recipes WHERE id=%s",
+                        _unused = conn.execute("DELETE FROM hanip_recipes WHERE id=%s",
                                      (recipe["id"],))
-                    go("홈")
+                    _unused = go("홈")
                 except Exception:
                     st.error("삭제하지 못했어요. 다시 시도해 주세요.")
 
@@ -356,7 +356,7 @@ def matches(recipe, query, category, quick):
 
 def main():
     st.set_page_config(page_title="한입공유 · 우리들의 레시피", page_icon=Image.open(io.BytesIO(base64.b64decode(LOGO_B64))), layout="centered", initial_sidebar_state="collapsed")
-    show_launch_logo()
+    _unused = show_launch_logo()
     st.markdown("""<style>
     :root{--mint:#087E75;--ink:#153C37;--pale:#EAF7F4;--line:#DAE9E5}
     .stApp{background:#FFF9ED;color:var(--ink)}
@@ -389,7 +389,7 @@ def main():
     div[data-testid="stHorizontalBlock"]{gap:.4rem}.stButton button{padding:.3rem .25rem}
     .stButton button p{font-size:14px}}
     </style>""", unsafe_allow_html=True)
-    st.session_state.setdefault("page", "홈")
+    _unused = st.session_state.setdefault("page", "홈")
     try:
         url = st.secrets.get("DATABASE_URL", "")
     except Exception:
@@ -398,11 +398,11 @@ def main():
     ready, db_failed = False, False
     recipes = []
     try:
-        initialize_db(url)
+        _unused = initialize_db(url)
         if not st.session_state.get("uid"):
             guest_id = str(uuid.uuid4())
             with db_connect(url) as conn:
-                conn.execute("INSERT INTO hanip_users (id,handle,nickname,salt,password_hash) VALUES (%s,%s,%s,%s,%s)",
+                _unused = conn.execute("INSERT INTO hanip_users (id,handle,nickname,salt,password_hash) VALUES (%s,%s,%s,%s,%s)",
                              (guest_id, guest_id, "익명", "guest", "disabled"))
             st.session_state.uid = guest_id
         recipes = get_recipes(url)
@@ -420,7 +420,7 @@ def main():
     for col, label in zip(nav, ["홈", "찜한 요리", "요리 올리기", "내 공간"]):
         with col:
             if st.button(label, use_container_width=True, type="primary" if st.session_state.page == label else "secondary"):
-                go(label)
+                _unused = go(label)
     if st.session_state.get("flash"):
         st.success(st.session_state.pop("flash"))
     favorites = set(st.session_state.get("sample_favorites", []))
@@ -432,17 +432,17 @@ def main():
     all_recipes = recipes + SAMPLES
     page = st.session_state.page
     if page == "요리 올리기":
-        upload(url, ready)
+        _unused = upload(url, ready)
         return
     if page == "상세":
         recipe = next((r for r in all_recipes if r["id"] == st.session_state.get("selected")), None)
         if recipe:
-            detail(recipe, url, ready, favorites)
+            _unused = detail(recipe, url, ready, favorites)
         else:
             st.info("삭제되었거나 현재 목록에 없는 레시피예요. 홈에서 다시 찾아 주세요.")
         return
     if page == "내 공간":
-        account(url, ready)
+        _unused = account(url, ready)
         if not st.session_state.get("uid"):
             return
         st.subheader("내가 올린 요리")
@@ -454,7 +454,7 @@ def main():
     else:
         st.markdown('<section class="hero"><small>한 사람의 비법이, 모두의 한 끼로</small><h1>오늘은 누구의 요리를<br>만들어 볼까요?</h1><p>내가 아끼는 레시피를 함께 나눠요.</p></section>', unsafe_allow_html=True)
         query = st.text_input("요리 검색", placeholder="🔎 요리 이름, 재료, 만든 사람", label_visibility="collapsed", max_chars=100)
-        st.session_state.setdefault("food_category", "전체")
+        _unused = st.session_state.setdefault("food_category", "전체")
         st.markdown("#### 오늘 당기는 메뉴")
         category_items = list(CATEGORIES.items())
         for start in range(0, len(category_items), 4):
@@ -471,7 +471,7 @@ def main():
         order = st.selectbox("정렬", ["최근 올라온 순", "빠르게 만드는 순"], label_visibility="collapsed")
         visible = [r for r in all_recipes if matches(r, query, chosen, quick)]
         if order == "빠르게 만드는 순":
-            visible.sort(key=lambda r: r["minutes"])
+            _unused = visible.sort(key=lambda r: r["minutes"])
         st.markdown(f"### 함께 나누는 레시피 · {len(visible)}")
         if st.button("↻ 새 레시피 확인", use_container_width=True):
             st.rerun()
@@ -488,12 +488,12 @@ def main():
             a, b = st.columns([3, 1])
             with a:
                 if st.button("레시피 보기 →", key="open_"+recipe["id"], use_container_width=True):
-                    go("상세", recipe["id"])
+                    _unused = go("상세", recipe["id"])
             with b:
                 if st.button("♥" if recipe["id"] in favorites else "♡ 찜", key="fav_"+recipe["id"], use_container_width=True):
-                    toggle_favorite(recipe, url, ready, favorites)
+                    _unused = toggle_favorite(recipe, url, ready, favorites)
     st.caption("한입공유 · 음식 알레르기와 재료의 익힘 정도를 확인해 주세요.")
 
 
 if __name__ == "__main__":
-    main()
+    _unused = main()
